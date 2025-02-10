@@ -1,62 +1,60 @@
-# ==================================
-# Image Classification of parking lots - Scikitlearn
-# Bu model, dolu/boş park alanlarını sınıflandıran basit bir image classification modeli üretir
-# ==================================
-
 import os
-import numpy as np
-import pickle #modeli kaydetmek için
+import cv2
 
-from skimage.io import imread # görüntü dosyası -> NumPy array
-from skimage.transform import resize
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import GridSearchCV #en düşük hata oranına sahip hiperparametrelerin seçimi. CV: Cross-Validation
-from sklearn.svm import SVC # Support Vector Classification
-from sklearn.metrics import accuracy_score
+from util import get_parking_spots_bboxes, empty_or_not
 
-# PREPARE DATA,
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
-input_dir = './clf-data'
-categories = ['empty', 'not_empty']
 
-data = []
-labels = []
+mask_path = './mask_crop.png'
+video_path = "./samples/parking_crop_loop.mp4"
 
-for category_idx, category in enumerate(categories):
-    for file in os.listdir(os.path.join(input_dir, category)): #resim ismi
-        img_path = os.path.join(input_dir, category, file) #her bir resime dokunacak
-        img = imread(img_path)
-        img = resize(img, (15, 15))
+mask = cv2.imread(mask_path, 0) #0 gray scale için
 
-        data.append(img.flatten()) #2D veye 3D görüntüleri tek bir vektör(satır) haline getirir
-                                   #img.reshape(-1) aynı sonucu verir
-        labels.append(category_idx)
+#videonun okunması
+cap = cv2.VideoCapture(video_path)
 
-data = np.asarray(data) #train için uygun olan formata getirir
-labels = np.asarray(labels)
+connected_components = cv2.connectedComponentsWithStats(mask, 4, cv2.CV_32S)
+"""
+    Graf teorisinden temel alan bir tekniktir
+    Bu fonksiyon bir binary mask üzerindeki bağlı bileşenleri (connected_components) tespit etmek için kullanılır
+    Her bir connected componenti ayrı bir etiketle tanımlar
+    Amaç: Maskedeki farklı park yerlerini tanımlamak ve ölçmek için kullanıldı
+    
+    mask : Beyaz (1) pikseller tespit edilmek istenen nesneler, siyah (0) arka plan
+    4 : Komşuluk türü, 4 yönlü komşularıyla bağlantılı olup olmadığı kontrol edilir. alternatifi 8 (çaprazlar dahil)
+    cv2.cv32S : Çıktı etiketlerinin (labels) türünü belirler. bu durumda her connected component için bir etiket
+                (int) oluşturulacak ve 'int32' formatında olacak.
+"""
+
+spots = get_parking_spots_bboxes(connected_components)
+#componentlerin kutu içerisinde koordinatlarını döndürür
+
+ret = True
+while ret:
+    ret, frame = cap.read()
+
+    for spot in spots:
+        x1, y1, w, h = spot
+
+        spot_crop = frame[y1:y1 + h, x1:x1 + w, :] #geçerli park yeri
+        spot_status = empty_or_not(spot_crop) #park yeri boş/dolu ?
+
+        #boş ise yeşil, dolu ise kırmızı
+        if spot_status:
+            frame = cv2.rectangle(frame, (x1,y1), (x1+w, y1+h), (0,255,0), 2)
+        else:
+            frame = cv2.rectangle(frame, (x1,y1), (x1+w, y1+h), (0,0,255), 2)
 
 
-# TRAIN/TEST/SPLIT
-x_train, x_test, y_train, y_test = train_test_split(data, labels, test_size=0.2, shuffle=True, stratify=labels)
-#stratify: veri setinde dengesizlik varsa her iki setin de aynı oranda 0 1 içermesini sağlar. etiketlerin orantılı dağıtılmasını sağlar
+    cv2.imshow('frame', frame)
+    if cv2.waitKey(25) & 0xFF == ord('q'):
+        break
 
 
-# TRAIN CLASSIFIER
-classifier = SVC()
 
-svm_parameters = [{'gamma': [0.01, 0.001, 0.0001], 'C': [1, 10, 100, 1000]}] # 3 x 4 = 12 classifiers. burada detaya inmedim.
 
-grid_search = GridSearchCV(classifier, svm_parameters)
-grid_search.fit(x_train, y_train)
 
-# TEST PERFORMANCE
-best_estimator = grid_search.best_estimator_ #12 arasından en iyi classifier seçiyoruz
-
-y_prediction = best_estimator.predict(x_test)
-
-score = accuracy_score(y_prediction, y_test)
-
-print('{}% of samples were correctly classified'.format(str(score * 100)))
-
-pickle.dump(best_estimator, open('./model.p', 'wb')) #modeli kaydet
+cap.release()
+cv2.destroyAllWindows()
