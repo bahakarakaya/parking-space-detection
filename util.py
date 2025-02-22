@@ -15,7 +15,7 @@ def empty_or_not(spot_bgr):
     flat_data = []
 
     #işlenebilir formata dönüştürüyoruz
-    img_resized = resize(spot_bgr, (15, 15, 3)) # 15x15 image in 3 color channels
+    img_resized = resize(spot_bgr, (15, 15, 3))     # 15x15 image in 3 color channels
     flat_data.append(img_resized.flatten())
     flat_data = np.array(flat_data)
 
@@ -35,8 +35,8 @@ def get_parking_spots_bboxes(connected_components):
         centroid : her komponente ait merkezler
     """
 
-    slots = [] #tüm bbox koordinatlarını tutacak liste 
-    coef = 1 #gerekirse koordinatları ölçeklemek için
+    slots = []          #tüm bbox koordinatlarını tutacak liste 
+    coef = 1            #gerekirse koordinatları ölçeklemek için
 
     # her componenti gezinecek döngü
     # 0 genellikle background olduğu için 1'den başlar.
